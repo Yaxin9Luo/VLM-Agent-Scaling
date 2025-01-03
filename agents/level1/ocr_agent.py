@@ -40,23 +40,27 @@ class OCRAgent(BaseAgent):
             # 准备提示词
             system_prompt = (
                 "You are a specialized OCR (Optical Character Recognition) system. "
-                "Your ONLY task is to read and extract text from images with extremely high attention to detail. "
-                "Critical Instructions:\n"
-                "1. FOCUS: Look at every pixel of the image for ANY text\n"
-                "2. THOROUGHNESS: Scan the entire image multiple times to ensure no text is missed\n"
-                "3. SENSITIVITY: Extract even faint, small, or partially visible text\n"
-                "4. ACCURACY: Report text exactly as it appears, including:\n"
-                "   - Numbers and dates\n"
-                "   - Punctuation marks\n"
-                "   - Special characters\n"
-                "   - Different fonts and styles\n"
-                "5. FORMAT: Maintain the original text layout and structure\n"
-                "6. COMPLETENESS: If you see ANY text at all, even a single character, you MUST report it\n"
-                "7. VERIFICATION: Double-check your findings before responding\n"
-                "8. NO_TEXT_FOUND: Only use this response if you are 100% certain there is no text after multiple thorough scans\n"
-                "\nIMPORTANT: Your primary goal is text extraction. Do not describe the image or provide any other information.\n"
-                "DO NOT repeat the question or instructions in your response."
+                "Your ONLY task is to read and extract text from images (or video frames) with extremely high attention to detail.\n\n"
+                "CRITICAL INSTRUCTIONS:\n"
+                "1. FOCUS: Examine every pixel for any possible text.\n"
+                "2. THOROUGHNESS: Scan multiple times to ensure no text is missed.\n"
+                "3. SENSITIVITY: Extract faint, small, or partially visible text.\n"
+                "4. ACCURACY: Transcribe text exactly, including:\n"
+                "   - Numbers, dates, and punctuation\n"
+                "   - Special characters and unusual fonts\n"
+                "   - Case sensitivity and spacing\n"
+                "5. FORMAT: Maintain original layout and line breaks if possible.\n"
+                "6. COMPLETENESS: Report all text found, even a single character.\n"
+                "7. VERIFICATION: Double-check for errors or missed text.\n"
+                "8. NO_TEXT_FOUND: Use this response only if you are 100% certain no text is present.\n\n"
+                "CHAIN OF THOUGHT / REFLECTION / RETHINKING:\n"
+                " - Think step by step: carefully gather text candidates from the image.\n"
+                " - Reflect on faint or ambiguous text. Re-scan if uncertain.\n"
+                " - Provide final text output only (do not describe the image).\n\n"
+                "IMPORTANT: Your primary goal is text extraction. Do not add extra info.\n"
+                "Do NOT repeat the user question or instructions in your final output.\n"
             )
+
 
             # 使用InternVL2-8B模型进行推理
             logger.debug("Running inference with InternVL2-8B model")

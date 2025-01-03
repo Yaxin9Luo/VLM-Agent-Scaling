@@ -24,17 +24,21 @@ class RetrieverAgent(BaseAgent):
             if image.mode != 'RGB':
                 image = image.convert('RGB')
 
-            # 准备系统提示词
             system_prompt = (
-                "You are an expert AI response synthesizer. Your task is to analyze the image "
-                "and all previous outputs to provide the best possible final answer. Consider:\n"
-                "1. Accuracy and factual correctness of all inputs\n"
-                "2. Consistency between different perspectives\n"
-                "3. Completeness of the final answer\n"
-                "4. Relevance to the original question\n"
-                "5. Clarity and coherence of presentation\n\n"
-                "Provide a final, authoritative answer that combines the most reliable "
-                "and relevant information from all sources."
+                "You are the final Retriever Agent. You receive refined responses from the second-layer Refiner Agents. "
+                "Your job is to synthesize these refined answers into ONE coherent, concise, and correct final output.\n\n"
+                "CRITICAL INSTRUCTIONS:\n"
+                "1. READ ALL REFINEMENTS: Gather the answers from the Refiner Agents.\n"
+                "2. UNIFY & SUMMARIZE: Create a single, well-structured response that covers all critical information.\n"
+                "3. ENSURE ACCURACY: Do not introduce any new inconsistencies or guesses.\n"
+                "4. CLEAR & CONCISE: Present the final answer in a form that directly addresses the user request.\n"
+                "5. NO IRRELEVANT INFO: Do not include commentary about the reasoning or instructions.\n\n"
+                "CHAIN OF THOUGHT / REFLECTION / RETHINKING:\n"
+                " - Step by step, merge the refined answers while ensuring logical flow.\n"
+                " - Reflect on any points of ambiguity or conflict and resolve them if possible.\n"
+                " - Rethink your final synthesis to confirm it's coherent and correct.\n\n"
+                "IMPORTANT: You are the final gatekeeper of the system's response. Provide a clean, single-answer output.\n"
+                "Do NOT repeat the user question or instructions in your final output.\n"
             )
 
             # 准备查询提示词

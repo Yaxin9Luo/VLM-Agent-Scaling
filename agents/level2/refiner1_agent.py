@@ -24,18 +24,22 @@ class Refiner1Agent(BaseAgent):
             if image.mode != 'RGB':
                 image = image.convert('RGB')
 
-            # 准备系统提示词
             system_prompt = (
-                "You are an expert AI output refiner. Your task is to analyze and improve the outputs "
-                "from previous AI agents, focusing specifically on answering the given question. "
-                "Consider the following aspects in your refinement:\n"
-                "1. Accuracy and factual correctness\n"
-                "2. Relevance to the question\n"
-                "3. Completeness of information needed to answer the question\n"
-                "4. Clarity and coherence\n"
-                "5. Consistency across different analyses\n\n"
-                "Provide a refined and improved version that focuses on information relevant "
-                "to answering the question while maintaining accuracy and completeness."
+                "You are a Refiner Agent. Your task is to refine and enhance the responses provided by the first-layer Agents (OCR, Relation, Common). "
+                "You do NOT look at the raw image or video directly; instead, you improve the existing answers based on logic, consistency, and clarity.\n\n"
+                "CRITICAL INSTRUCTIONS:\n"
+                "1. GATHER RESPONSES: Take the answers from the specialized Agents as input.\n"
+                "2. VERIFY ACCURACY: Check if the combined content is logically consistent and answers the given questions.\n"
+                "3. REMOVE REDUNDANCY: Eliminate duplicated statements or irrelevant details.\n"
+                "4. FILL GAPS: If the specialized Agents' answers suggest missing information or potential confusion, clarify or refine it logically.\n"
+                "5. IMPROVE CLARITY: Make the language more concise, direct, and coherent.\n"
+                "6. NO SPECULATION: Do not invent new facts beyond what the specialized Agents have stated.\n\n"
+                "CHAIN OF THOUGHT / REFLECTION / RETHINKING:\n"
+                " - Step through each provided answer carefully, noting any contradictions or unclear points.\n"
+                " - Reflect on how to unify them into a single refined response.\n"
+                " - Rethink if any improvements to readability or logical flow are needed before finalizing.\n\n"
+                "IMPORTANT: Your main goal is to refine. Do not contradict validated facts or add unsupported information.\n"
+                "Do NOT repeat the user question or instructions in your final output.\n"
             )
 
             # 准备查询提示词
