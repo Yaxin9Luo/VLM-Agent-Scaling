@@ -1,63 +1,17 @@
 import os
-import base64
-import io
 from typing import Dict, Any, Optional
-from openai import OpenAI
 from PIL import Image
 from loguru import logger
 from ..base.base_agent import BaseAgent, AgentInput, AgentOutput
+from ..base.vlm_base import VLMBase
 
 class RelationAgent(BaseAgent):
-    """Relation Agent实现，使用OpenAI GPT-4 Vision API分析图像中的关系信息"""
+    """Relation Agent实现，使用InternVL2-8B模型分析图像中的关系信息"""
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__(config)
-        self.api_key = os.getenv("OPENAI_API_KEY")
-        if not self.api_key:
-            raise ValueError("OPENAI_API_KEY not found in environment variables")
-        
-        # 初始化OpenAI客户端
-        self.client = OpenAI(api_key=self.api_key)
+        self.vlm = VLMBase()
         logger.info("Relation Agent initialized successfully")
-
-    def compress_image(self, image_data: str, max_bytes: int = 20000000) -> str:
-        """压缩图像到API限制大小"""
-        try:
-            # 解码base64图片数据
-            image_bytes = base64.b64decode(image_data)
-            image = Image.open(io.BytesIO(image_bytes))
-            
-            # 如果不是RGB模式，转换为RGB
-            if image.mode != 'RGB':
-                image = image.convert('RGB')
-            
-            # 尝试不同的尺寸和质量组合
-            sizes = [2048, 1600, 1200, 800]
-            qualities = [95, 85, 75, 65]
-            
-            for size in sizes:
-                ratio = size / max(image.size)
-                new_size = tuple(int(dim * ratio) for dim in image.size)
-                resized = image.resize(new_size, Image.Resampling.LANCZOS)
-                
-                for quality in qualities:
-                    output = io.BytesIO()
-                    resized.save(output, format='JPEG', quality=quality, optimize=True)
-                    data = output.getvalue()
-                    
-                    if len(data) <= max_bytes:
-                        return base64.b64encode(data).decode()
-            
-            # 如果还是太大，使用最小的尺寸和质量
-            output = io.BytesIO()
-            final_size = (800, int(800 * image.size[1] / image.size[0]))
-            final_image = image.resize(final_size, Image.Resampling.LANCZOS)
-            final_image.save(output, format='JPEG', quality=65, optimize=True)
-            return base64.b64encode(output.getvalue()).decode()
-            
-        except Exception as e:
-            logger.error(f"Error compressing image: {str(e)}")
-            raise
 
     async def process(self, input_data: AgentInput) -> AgentOutput:
         """处理图像关系分析请求"""
@@ -65,14 +19,11 @@ class RelationAgent(BaseAgent):
             raise ValueError("Invalid input: requires image_path")
 
         try:
-            # 读取并处理本地图片
-            with open(input_data.image_path, "rb") as image_file:
-                image_data = base64.b64encode(image_file.read()).decode()
-            logger.debug(f"Loaded local image from {input_data.image_path}")
-
-            # 压缩图片
-            processed_image = self.compress_image(image_data)
-
+            # 读取图片
+            image = Image.open(input_data.image_path)
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+            
             # 准备系统提示词
             system_prompt = (
                 "You are an advanced visual relationship analyzer. "
@@ -91,37 +42,10 @@ class RelationAgent(BaseAgent):
                     f"{input_data.question}\n"
                 )
 
-            # 使用OpenAI Vision API
-            logger.debug("Sending request to OpenAI Vision API")
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": system_prompt
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": "Analyze all relationships present in this image:"
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{processed_image}"
-                                }
-                            }
-                        ]
-                    }
-                ],
-                max_tokens=1000,
-                temperature=0
-            )
-
-            # 从回复中提取分析结果
-            analysis_result = response.choices[0].message.content.strip()
+            # 使用InternVL2-8B模型进行推理
+            logger.debug("Running inference with InternVL2-8B model")
+            query = "Analyze all relationships present in this image:"
+            analysis_result = self.vlm.process_image_query(image, query, system_prompt)
             logger.info("Successfully analyzed relationships in image")
 
             # 计算置信度分数
@@ -131,8 +55,7 @@ class RelationAgent(BaseAgent):
                 result=analysis_result,
                 confidence=confidence,
                 metadata={
-                    "raw_response": response.model_dump(),
-                    "token_usage": response.usage.total_tokens if response.usage else None
+                    "model": "internvl2-8b",
                 }
             )
         except Exception as e:

@@ -1,20 +1,16 @@
 import os
 from typing import Dict, Any, Optional, List
-from openai import OpenAI
+from PIL import Image
 from loguru import logger
 from ..base.base_agent import BaseAgent, AgentInput, AgentOutput
+from ..base.vlm_base import VLMBase
 
 class Refiner1Agent(BaseAgent):
-    """Refiner1 Agent实现，使用OpenAI GPT-4来优化和改进第一层Agent的输出"""
+    """Refiner1 Agent实现，使用InternVL2-8B来优化和改进第一层Agent的输出"""
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__(config)
-        self.api_key = os.getenv("OPENAI_API_KEY")
-        if not self.api_key:
-            raise ValueError("OPENAI_API_KEY not found in environment variables")
-        
-        # 初始化OpenAI客户端
-        self.client = OpenAI(api_key=self.api_key)
+        self.vlm = VLMBase()
         logger.info("Refiner1 Agent initialized successfully")
 
     async def process(self, input_data: AgentInput) -> AgentOutput:
@@ -23,6 +19,11 @@ class Refiner1Agent(BaseAgent):
             raise ValueError("Invalid input: requires previous_responses")
 
         try:
+            # 读取图片
+            image = Image.open(input_data.image_path)
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+
             # 准备系统提示词
             system_prompt = (
                 "You are an expert AI output refiner. Your task is to analyze and improve the outputs "
@@ -37,35 +38,24 @@ class Refiner1Agent(BaseAgent):
                 "to answering the question while maintaining accuracy and completeness."
             )
 
-            # 准备用户提示词
-            user_prompt = (
+            # 准备查询提示词
+            query = (
                 f"Question: {input_data.question}\n\n"
                 f"Previous agents provided the following outputs:\n\n"
             )
 
             # 添加每个agent的输出
             for i, resp in enumerate(input_data.previous_responses, 1):
-                user_prompt += f"Agent {i} output (confidence: {resp.confidence:.2f}):\n{resp.result}\n\n"
+                query += f"Agent {i} output (confidence: {resp.confidence:.2f}):\n{resp.result}\n\n"
 
-            user_prompt += (
-                f"Please analyze and refine these outputs, focusing specifically on "
-                f"information that helps answer the question: {input_data.question}"
+            query += (
+                f"Please analyze the image and these outputs, then provide a refined answer "
+                f"to the question: {input_data.question}"
             )
 
-            # 调用OpenAI API
-            logger.debug("Sending request to OpenAI API")
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.3,  # 使用较低的temperature以保持输出的一致性
-                max_tokens=128
-            )
-
-            # 提取优化后的结果
-            refined_result = response.choices[0].message.content.strip()
+            # 使用InternVL2-8B模型进行推理
+            logger.debug("Running inference with InternVL2-8B model")
+            refined_result = self.vlm.process_image_query(image, query, system_prompt)
             logger.info("Successfully refined previous outputs")
 
             # 计算置信度分数（基于输入的置信度和优化程度）
@@ -76,8 +66,7 @@ class Refiner1Agent(BaseAgent):
                 result=refined_result,
                 confidence=confidence,
                 metadata={
-                    "raw_response": response.model_dump(),
-                    "token_usage": response.usage.total_tokens if response.usage else None,
+                    "model": "internvl2-8b",
                     "base_confidence": base_confidence,
                     "question": input_data.question
                 }
@@ -89,4 +78,4 @@ class Refiner1Agent(BaseAgent):
 
     def validate_input(self, input_data: AgentInput) -> bool:
         """验证输入数据"""
-        return bool(input_data.previous_responses and len(input_data.previous_responses) > 0 and input_data.question) 
+        return bool(input_data.previous_responses and len(input_data.previous_responses) > 0 and input_data.question and input_data.image_path) 

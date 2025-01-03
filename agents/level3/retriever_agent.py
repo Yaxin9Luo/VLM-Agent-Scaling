@@ -1,104 +1,81 @@
 import os
 from typing import Dict, Any, Optional, List
-from openai import OpenAI
+from PIL import Image
 from loguru import logger
 from ..base.base_agent import BaseAgent, AgentInput, AgentOutput
+from ..base.vlm_base import VLMBase
 
 class RetrieverAgent(BaseAgent):
-    """Retriever Agent实现，使用OpenAI GPT-4来整合所有Refiner Agents的输出，并回答问题"""
+    """Retriever Agent实现，使用InternVL2-8B来综合所有之前Agent的输出，生成最终答案"""
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         super().__init__(config)
-        self.api_key = os.getenv("OPENAI_API_KEY")
-        if not self.api_key:
-            raise ValueError("OPENAI_API_KEY not found in environment variables")
-        
-        # 初始化OpenAI客户端
-        self.client = OpenAI(api_key=self.api_key)
+        self.vlm = VLMBase()
         logger.info("Retriever Agent initialized successfully")
 
     async def process(self, input_data: AgentInput) -> AgentOutput:
-        """处理来自Refiner Agents的输出，并生成最终答案"""
+        """处理所有之前Agent的输出，生成最终答案"""
         if not self.validate_input(input_data):
-            raise ValueError("Invalid input: requires previous_responses from refiners and a question")
+            raise ValueError("Invalid input: requires previous_responses")
 
         try:
+            # 读取图片
+            image = Image.open(input_data.image_path)
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
+
             # 准备系统提示词
             system_prompt = (
-                "You are an expert question answerer. Your task is to provide a clear, accurate, "
-                "and concise answer to the given question based on the refined information from "
-                "multiple AI agents. Focus on:\n"
-                "1. Directly answering the question\n"
-                "2. Using the most reliable information from the refinements\n"
-                "3. Resolving any conflicts between different refinements\n"
-                "4. Providing evidence or reasoning for your answer\n"
-                "5. Being concise while including all necessary details\n\n"
-                "Provide a final answer that directly addresses the question using the most "
-                "accurate and relevant information available."
+                "You are an expert AI response synthesizer. Your task is to analyze the image "
+                "and all previous outputs to provide the best possible final answer. Consider:\n"
+                "1. Accuracy and factual correctness of all inputs\n"
+                "2. Consistency between different perspectives\n"
+                "3. Completeness of the final answer\n"
+                "4. Relevance to the original question\n"
+                "5. Clarity and coherence of presentation\n\n"
+                "Provide a final, authoritative answer that combines the most reliable "
+                "and relevant information from all sources."
             )
 
-            # 准备用户提示词，包含问题和每个refiner的输出
-            user_prompt = f"Question: {input_data.question}\n\n"
-            
-            # 添加每个refiner的输出
+            # 准备查询提示词
+            query = (
+                f"Question: {input_data.question}\n\n"
+                f"Previous agents provided the following outputs:\n\n"
+            )
+
+            # 添加每个agent的输出
             for i, resp in enumerate(input_data.previous_responses, 1):
-                user_prompt += f"Refiner {i} (confidence: {resp.confidence:.2f}):\n{resp.result}\n\n"
+                query += f"Agent {i} output (confidence: {resp.confidence:.2f}):\n{resp.result}\n\n"
 
-            user_prompt += (
-                f"Based on the above information, please provide a clear and concise answer to the question: "
-                f"{input_data.question}\n"
-                f"Focus on directly answering the question while using the most reliable information available."
+            query += (
+                f"Please analyze the image and all previous outputs to provide "
+                f"the best possible final answer to the question: {input_data.question}"
             )
 
-            # 调用OpenAI API
-            logger.debug("Sending request to OpenAI API")
-            response = self.client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.3,  # 使用较低的temperature以保持输出的一致性
-                max_tokens=1000
-            )
-
-            # 提取最终答案
-            final_answer = response.choices[0].message.content.strip()
+            # 使用InternVL2-8B模型进行推理
+            logger.debug("Running inference with InternVL2-8B model")
+            final_result = self.vlm.process_image_query(image, query, system_prompt)
             logger.info("Successfully generated final answer")
 
-            # 计算最终置信度（基于输入的置信度加权平均）
-            weights = [resp.confidence for resp in input_data.previous_responses]
-            weighted_confidence = sum(w * c for w, c in zip(weights, weights)) / sum(weights)
-            
-            # 根据输入置信度的一致性调整最终置信度
-            confidence_variance = max(weights) - min(weights)
-            if confidence_variance < 0.1:  # 如果输入非常一致，略微提高置信度
-                final_confidence = min(0.98, weighted_confidence * 1.1)
-            else:  # 如果输入不太一致，略微降低置信度
-                final_confidence = weighted_confidence * 0.95
+            # 计算最终置信度分数
+            base_confidence = sum(resp.confidence for resp in input_data.previous_responses) / len(input_data.previous_responses)
+            # 最终答案的置信度略高于平均值，但不超过0.98
+            confidence = min(0.98, base_confidence * 1.15)
 
             return AgentOutput(
-                result=final_answer,
-                confidence=final_confidence,
+                result=final_result,
+                confidence=confidence,
                 metadata={
-                    "raw_response": response.model_dump(),
-                    "token_usage": response.usage.total_tokens if response.usage else None,
-                    "input_confidences": weights,
-                    "confidence_variance": confidence_variance,
-                    "weighted_confidence": weighted_confidence,
+                    "model": "internvl2-8b",
+                    "base_confidence": base_confidence,
                     "question": input_data.question
                 }
             )
 
         except Exception as e:
             logger.error(f"Error generating final answer: {str(e)}")
-            raise Exception(f"Answer generation failed: {str(e)}")
+            raise Exception(f"Final answer generation failed: {str(e)}")
 
     def validate_input(self, input_data: AgentInput) -> bool:
         """验证输入数据"""
-        return bool(
-            input_data.previous_responses and 
-            len(input_data.previous_responses) > 0 and
-            all(isinstance(resp, AgentOutput) for resp in input_data.previous_responses) and
-            input_data.question
-        ) 
+        return bool(input_data.previous_responses and len(input_data.previous_responses) > 0 and input_data.question and input_data.image_path) 

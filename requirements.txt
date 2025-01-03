@@ -4,3 +4,4 @@ pydantic==2.5.2
 loguru==0.7.2
 pillow==10.1.0
 openai>=1.0.0
+lmdeploy
