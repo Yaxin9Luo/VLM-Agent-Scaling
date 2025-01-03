@@ -13,7 +13,7 @@ class RelationAgent(BaseAgent):
         self.vlm = VLMBase()
         logger.info("Relation Agent initialized successfully")
 
-    async def process(self, input_data: AgentInput) -> AgentOutput:
+    def process(self, input_data: AgentInput) -> AgentOutput:
         """处理图像关系分析请求"""
         if not self.validate_input(input_data):
             raise ValueError("Invalid input: requires image_path")
@@ -26,30 +26,45 @@ class RelationAgent(BaseAgent):
             
             # 准备系统提示词
             system_prompt = (
-                "You are an advanced visual relationship analyzer. "
-                "Instructions:\n"
-                "1. Analyze and describe all relationships between objects/entities in the image\n"
-                "2. Focus on spatial relationships (above, below, next to, etc.)\n"
-                "3. Identify interactions between objects/people\n"
-                "4. Note any hierarchical or functional relationships\n"
-                "5. Be precise and specific in relationship descriptions\n"
-                "6. If no relationships can be found, return 'NO_RELATIONSHIPS_FOUND'\n"
+                "You are an advanced visual relationship analyzer. Your task is to analyze relationships between elements in the image. "
+                "Critical Instructions:\n"
+                "1. ANALYZE ALL RELATIONSHIPS:\n"
+                "   - Spatial relationships (above, below, next to)\n"
+                "   - Interactions between objects/people\n"
+                "   - Hierarchical relationships\n"
+                "   - Functional relationships\n"
+                "2. BE SPECIFIC:\n"
+                "   - Use precise spatial terms\n"
+                "   - Describe exact positions\n"
+                "   - Mention specific interactions\n"
+                "3. FOCUS ON:\n"
+                "   - Object-to-object relationships\n"
+                "   - Object-to-environment relationships\n"
+                "   - Character/person interactions\n"
+                "4. FORMAT:\n"
+                "   - List each relationship clearly\n"
+                "   - Use simple, direct language\n"
+                "5. IMPORTANT: If no relationships can be found, return 'NO_RELATIONS_FOUND'\n"
             )
             
             if input_data.question:
                 system_prompt += (
-                    "7. Focus on relationships that are relevant to answering the following question: "
+                    "\nWhile analyzing all relationships, pay special attention to those relevant to: "
                     f"{input_data.question}\n"
                 )
 
             # 使用InternVL2-8B模型进行推理
             logger.debug("Running inference with InternVL2-8B model")
-            query = "Analyze all relationships present in this image:"
+            query = (
+                "Analyze and list ALL relationships present in this image. "
+                "Include spatial, interactive, and functional relationships. "
+                "If no relationships exist, respond with 'NO_RELATIONS_FOUND'."
+            )
             analysis_result = self.vlm.process_image_query(image, query, system_prompt)
             logger.info("Successfully analyzed relationships in image")
 
             # 计算置信度分数
-            confidence = 0.9 if analysis_result and analysis_result != "NO_RELATIONSHIPS_FOUND" else 0.1
+            confidence = 0.9 if analysis_result and analysis_result.strip() != "NO_RELATIONS_FOUND" else 0.1
 
             return AgentOutput(
                 result=analysis_result,

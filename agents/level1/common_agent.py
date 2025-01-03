@@ -13,7 +13,7 @@ class CommonAgent(BaseAgent):
         self.vlm = VLMBase()
         logger.info("Common Agent initialized successfully")
 
-    async def process(self, input_data: AgentInput) -> AgentOutput:
+    def process(self, input_data: AgentInput) -> AgentOutput:
         """处理通用视觉问答请求"""
         if not self.validate_input(input_data):
             raise ValueError("Invalid input: requires image_path and question")

@@ -1,4 +1,3 @@
-import asyncio
 import os
 import json
 from pathlib import Path
@@ -6,13 +5,18 @@ from loguru import logger
 from tqdm import tqdm
 from dotenv import load_dotenv
 from run_pipeline import run_pipeline
+from agents.base.vlm_base import VLMBase
 
 # 加载环境变量
 load_dotenv()
 
-async def run_mmvet_benchmark(mmvet_json_path: str, images_dir: str, output_path: str):
+def run_mmvet_benchmark(mmvet_json_path: str, images_dir: str, output_path: str):
     """运行MMVET benchmark测试"""
     try:
+        # 初始化VLM模型（单例模式，只会初始化一次）
+        logger.info("Initializing InternVL2-8B model...")
+        VLMBase()
+
         # 确保输出目录存在
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         
@@ -51,7 +55,7 @@ async def run_mmvet_benchmark(mmvet_json_path: str, images_dir: str, output_path
                 }
                 
                 # 运行pipeline
-                output = await run_pipeline(str(image_path), question=test_info['question'])
+                output = run_pipeline(str(image_path), question=test_info['question'])
                 
                 # 将结果添加到结果字典
                 results[test_id] = output.result
@@ -80,15 +84,10 @@ async def run_mmvet_benchmark(mmvet_json_path: str, images_dir: str, output_path
         raise
 
 if __name__ == "__main__":
-    # 检查API Key是否设置
-    if not os.getenv("OPENAI_API_KEY"):
-        logger.error("请在.env文件中设置OPENAI_API_KEY")
-        exit(1)
-        
     # 设置路径
     mmvet_json_path = "images/mm-vet/mm-vet.json"
     images_dir = "images/mm-vet/images"
     output_path = "results/mmvet_results.json"
     
     # 运行benchmark
-    asyncio.run(run_mmvet_benchmark(mmvet_json_path, images_dir, output_path)) 
+    run_mmvet_benchmark(mmvet_json_path, images_dir, output_path) 

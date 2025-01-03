@@ -25,7 +25,7 @@ class BaseAgent(ABC):
         self.config = config or {}
     
     @abstractmethod
-    async def process(self, input_data: AgentInput) -> AgentOutput:
+    def process(self, input_data: AgentInput) -> AgentOutput:
         """处理输入数据并返回结果"""
         pass
     

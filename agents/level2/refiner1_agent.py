@@ -13,7 +13,7 @@ class Refiner1Agent(BaseAgent):
         self.vlm = VLMBase()
         logger.info("Refiner1 Agent initialized successfully")
 
-    async def process(self, input_data: AgentInput) -> AgentOutput:
+    def process(self, input_data: AgentInput) -> AgentOutput:
         """处理来自第一层Agent的输出，并进行优化"""
         if not self.validate_input(input_data):
             raise ValueError("Invalid input: requires previous_responses")

@@ -13,7 +13,7 @@ class RetrieverAgent(BaseAgent):
         self.vlm = VLMBase()
         logger.info("Retriever Agent initialized successfully")
 
-    async def process(self, input_data: AgentInput) -> AgentOutput:
+    def process(self, input_data: AgentInput) -> AgentOutput:
         """处理所有之前Agent的输出，生成最终答案"""
         if not self.validate_input(input_data):
             raise ValueError("Invalid input: requires previous_responses")
