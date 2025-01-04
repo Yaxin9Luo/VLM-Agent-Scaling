@@ -1,98 +1,93 @@
 import os
 import json
-from tqdm import tqdm
+from pathlib import Path
 from loguru import logger
-from lmdeploy import pipeline, TurbomindEngineConfig
-from lmdeploy.vl import load_image
+from tqdm import tqdm
+from dotenv import load_dotenv
+from run_pipeline import run_pipeline
+from agents.base.vlm_base import VLMBase
 
-class MMVETTester:
-    def __init__(self):
-        # 初始化模型
-        self.model_path = "/root/autodl-tmp/InternVL2-8B"
-        logger.info(f"Initializing InternVL2-8B model from {self.model_path}")
-        self.model = pipeline(
-            self.model_path,
-            backend_config=TurbomindEngineConfig(session_len=8192)
-        )
+# 加载环境变量
+load_dotenv()
+
+def run_mmvet_benchmark(mmvet_json_path: str, images_dir: str, output_path: str):
+    """运行MMVET benchmark测试"""
+    try:
+        # 初始化VLM模型（单例模式，只会初始化一次）
+        logger.info("Initializing InternVL2-8B model...")
+        VLMBase()
+
+        # 确保输出目录存在
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
         
-        # 设置数据路径
-        self.image_dir = "/root/autodl-tmp/VLM-Agent-Scaling/images/mm-vet/images"
-        self.results_dir = "/root/autodl-tmp/VLM-Agent-Scaling/results"
-        self.mmvet_json = "/root/autodl-tmp/VLM-Agent-Scaling/images/mm-vet/mm-vet.json"
-        os.makedirs(self.results_dir, exist_ok=True)
+        # 加载MMVET测试集
+        with open(mmvet_json_path, 'r', encoding='utf-8') as f:
+            mmvet_data = json.load(f)
         
-        # 加载MM-VET问题
-        with open(self.mmvet_json, 'r', encoding='utf-8') as f:
-            self.mmvet_data = json.load(f)
-        
-        logger.info("MMVETTester initialized successfully")
-    
-    def process_single_image(self, image_path: str, question: str) -> str:
-        """处理单个图像的问题"""
-        try:
-            # 加载并处理图像
-            image = load_image(image_path)
-            
-            # 构建提示词
-            prompt = (
-                "You are an AI assistant specialized in understanding and analyzing images. "
-                "Please answer the following question about the image carefully and accurately. "
-                "If the question involves calculations, show your work step by step. "
-                "If you're not sure about something, say so explicitly.\n\n"
-                f"Question: {question}\n"
-                "Answer: "
-            )
-            
-            # 获取模型响应
-            response = self.model((prompt, image))
-            
-            # 从Response对象中提取文本
-            if hasattr(response, 'text'):
-                return response.text.strip()
-            else:
-                return str(response).strip()
-            
-        except Exception as e:
-            logger.error(f"Error processing image {image_path}: {str(e)}")
-            return f"Error: {str(e)}"
-    
-    def run_test(self):
-        """运行完整的MM-VET测试"""
+        # 如果结果文件已存在，加载已有结果
         results = {}
+        if os.path.exists(output_path):
+            try:
+                with open(output_path, 'r', encoding='utf-8') as f:
+                    results = json.load(f)
+                logger.info(f"Loaded {len(results)} existing results")
+            except json.JSONDecodeError:
+                logger.warning("Failed to load existing results, starting fresh")
         
-        # 处理每个问题
-        for image_id, data in tqdm(self.mmvet_data.items(), desc="Processing MM-VET questions"):
-            # 获取图片路径和问题
-            image_path = os.path.join(self.image_dir, data['imagename'])
-            question = data['question']
-            
-            # 确保图片存在
-            if not os.path.exists(image_path):
-                logger.error(f"Image not found: {image_path}")
+        # 处理每个测试样例
+        for test_id, test_info in tqdm(mmvet_data.items(), desc="Processing MMVET tests"):
+            # 如果已经处理过这个测试样例，跳过
+            if test_id in results:
+                logger.info(f"Skipping {test_id} (already processed)")
                 continue
+                
+            logger.info(f"Processing test: {test_id}")
             
-            # 处理图像并获取响应
-            response = self.process_single_image(image_path, question)
-            
-            # 保存结果
-            results[image_id] = response
-            
-            # 实时保存结果
-            with open(os.path.join(self.results_dir, "mmvet_results.json"), "w", encoding="utf-8") as f:
-                json.dump(results, f, indent=2, ensure_ascii=False)
-            
-            logger.info(f"Processed {image_id}")
-            logger.info(f"Image: {data['imagename']}")
-            logger.info(f"Question: {question}")
-            logger.info(f"Response: {response}\n")
+            try:
+                # 构建图片完整路径
+                image_path = os.path.join(images_dir, test_info['imagename'])
+                
+                # 准备输入数据
+                input_data = {
+                    'image_path': image_path,
+                    'question': test_info['question'],
+                    'capabilities': test_info['capability']
+                }
+                
+                # 运行pipeline
+                output = run_pipeline(str(image_path), question=test_info['question'])
+                
+                # 将结果添加到结果字典
+                results[test_id] = output.result
+                
+                # 立即保存当前结果
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    json.dump(results, f, ensure_ascii=False, indent=4)
+                
+                logger.info(f"Completed processing {test_id} with confidence: {output.confidence:.2f}")
+                logger.info(f"Question: {test_info['question']}")
+                logger.info(f"Answer: {output.result}")
+                logger.info("Results saved")
+                
+            except Exception as e:
+                logger.error(f"Error processing {test_id}: {str(e)}")
+                # 如果处理失败，添加一个空结果并保存
+                results[test_id] = ""
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    json.dump(results, f, ensure_ascii=False, indent=4)
         
-        logger.info("Testing completed. Results saved to mmvet_results.json")
+        logger.info(f"All tests completed. Results saved to {output_path}")
         return results
+        
+    except Exception as e:
+        logger.error(f"Benchmark run failed: {str(e)}")
+        raise
 
 if __name__ == "__main__":
-    # 设置日志级别
-    logger.add("mmvet_test.log", rotation="500 MB")
+    # 设置路径
+    mmvet_json_path = "images/mm-vet/mm-vet.json"
+    images_dir = "images/mm-vet/images"
+    output_path = "results/mmvet_results.json"
     
-    # 运行测试
-    tester = MMVETTester()
-    results = tester.run_test() 
+    # 运行benchmark
+    run_mmvet_benchmark(mmvet_json_path, images_dir, output_path) 

@@ -25,21 +25,28 @@ class RetrieverAgent(BaseAgent):
                 image = image.convert('RGB')
 
             system_prompt = (
-                "You are the final Retriever Agent. You receive refined responses from the second-layer Refiner Agents. "
-                "Your job is to synthesize these refined answers into ONE coherent, concise, and correct final output.\n\n"
-                "CRITICAL INSTRUCTIONS:\n"
-                "1. READ ALL REFINEMENTS: Gather the answers from the Refiner Agents.\n"
-                "2. UNIFY & SUMMARIZE: Create a single, well-structured response that covers all critical information.\n"
-                "3. ENSURE ACCURACY: Do not introduce any new inconsistencies or guesses.\n"
-                "4. CLEAR & CONCISE: Present the final answer in a form that directly addresses the user request.\n"
-                "5. NO IRRELEVANT INFO: Do not include commentary about the reasoning or instructions.\n\n"
-                "CHAIN OF THOUGHT / REFLECTION / RETHINKING:\n"
-                " - Step by step, merge the refined answers while ensuring logical flow.\n"
-                " - Reflect on any points of ambiguity or conflict and resolve them if possible.\n"
-                " - Rethink your final synthesis to confirm it's coherent and correct.\n\n"
-                "IMPORTANT: You are the final gatekeeper of the system's response. Provide a clean, single-answer output.\n"
-                "Do NOT repeat the user question or instructions in your final output.\n"
+                "You are the final Retriever Agent in a multi-agent pipeline. This pipeline includes two second-layer Refiner Agents:\n"
+                "1) The OCR Agent: extracts textual information from images.\n"
+                "2) The Vision Task Common Agent: performs visual understanding tasks such as object detection, classification, and scene description.\n\n"
+
+                "Your job is to synthesize the refined responses from these two specialized agents into ONE coherent, concise, and correct final answer.\n"
+                "You should logically combine:\n"
+                "- The text and any relevant metadata from the OCR Agent.\n"
+                "- The visual context, object details, and semantic insights from the Vision Task Common Agent.\n\n"
+
+                "While you are encouraged to use chain-of-thought reasoning internally to reconcile any contradictions or ambiguities step by step, "
+                "you must NOT reveal your internal reasoning or mention this multi-agent pipeline in your final answer.\n\n"
+
+                "#### Instructions:\n"
+                "1. Think step by step to unify data from the OCR Agent and the Vision Task Common Agent.\n"
+                "2. Resolve conflicts or overlapping information using logical reasoning.\n"
+                "3. Produce a single, concise, and coherent final answer.\n"
+                "4. Do NOT reveal or include your chain-of-thought; present only the final result.\n"
+                "5. If the information is insufficient or ambiguous, make a best guess or state that it cannot be determined.\n\n"
+
+                "Finally, respond with a self-contained, accurate, and straightforward output that only addresses the user query or task at hand."
             )
+
 
             # 准备查询提示词
             query = (
@@ -48,8 +55,9 @@ class RetrieverAgent(BaseAgent):
             )
 
             # 添加每个agent的输出
+            agent_names = ["Vision Task Common Agent", "OCR Agent"]
             for i, resp in enumerate(input_data.previous_responses, 1):
-                query += f"Agent {i} output (confidence: {resp.confidence:.2f}):\n{resp.result}\n\n"
+                query += f"{agent_names[i-1]} output (confidence: {resp.confidence:.2f}):\n{resp.result}\n\n"
 
             query += (
                 f"Please analyze the image and all previous outputs to provide "

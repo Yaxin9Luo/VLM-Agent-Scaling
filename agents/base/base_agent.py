@@ -1,34 +1,53 @@
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
-from abc import ABC, abstractmethod
+from loguru import logger
+
+@dataclass
+class AgentInput:
+    """Agent input data structure"""
+    image_path: str
+    question: str = None
+    previous_responses: List['AgentOutput'] = None
+    metadata: Dict[str, Any] = None
 
 @dataclass
 class AgentOutput:
-    """Agent的输出结构"""
+    """Agent output data structure"""
     result: str
     confidence: float
     metadata: Dict[str, Any] = None
 
-@dataclass
-class AgentInput:
-    """Agent的输入结构"""
-    image_path: Optional[str] = None
-    question: Optional[str] = None
-    previous_responses: Optional[List[AgentOutput]] = None
-    metadata: Optional[Dict[str, Any]] = None
-
-class BaseAgent(ABC):
-    """基础Agent类"""
+class BaseAgent:
+    """Base agent class with collaboration capabilities"""
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """初始化Agent"""
         self.config = config or {}
-    
-    @abstractmethod
+        self.collaboration_manager = None
+        
+    def set_collaboration_manager(self, manager):
+        """Set the collaboration manager for this agent"""
+        self.collaboration_manager = manager
+        
+    def request_collaboration(self, input_data: AgentInput, current_result: AgentOutput) -> AgentOutput:
+        """Request collaboration from other agents when needed"""
+        if self.collaboration_manager:
+            return self.collaboration_manager.request_collaboration(
+                self.__class__.__name__.lower().replace('agent', ''),
+                input_data,
+                current_result
+            )
+        return current_result
+        
     def process(self, input_data: AgentInput) -> AgentOutput:
-        """处理输入数据并返回结果"""
-        pass
-    
+        """Process the input and generate output, with collaboration if needed"""
+        raise NotImplementedError("Subclasses must implement process method")
+        
     def validate_input(self, input_data: AgentInput) -> bool:
-        """验证输入数据"""
-        return True 
+        """Validate input data"""
+        raise NotImplementedError("Subclasses must implement validate_input method")
+        
+    def _handle_low_confidence(self, input_data: AgentInput, result: AgentOutput) -> AgentOutput:
+        """Handle cases where the agent's confidence is low"""
+        if result.confidence < 0.7:  # Threshold for low confidence
+            return self.request_collaboration(input_data, result)
+        return result 
